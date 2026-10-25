@@ -39,25 +39,29 @@ NATIVE='''
 const CAP=window.Capacitor;const NATIVE=!!(CAP&&CAP.isNativePlatform&&CAP.isNativePlatform());
 const LN=NATIVE&&window.capacitorLocalNotifications?window.capacitorLocalNotifications.LocalNotifications:null;
 let nativePerm='prompt';const nativeOK=()=>!!LN&&nativePerm==='granted';
-const CH='rotina';
-async function nativeInit(ask){if(!LN)return;try{let p=await LN.checkPermissions();if(p.display!=='granted'&&ask)p=await LN.requestPermissions();nativePerm=p.display;
- await LN.createChannel({id:CH,name:'Rotina do Gabriel',description:'Lembretes e fim das etapas',importance:4,visibility:1,vibration:true,lights:true});
- LN.addListener&&LN.addListener('localNotificationActionPerformed',()=>{render();if(S.active)openFocus()});
- await syncNativeReminders();await syncTimerNotifs()}catch(e){console.warn('notif',e)}}
-async function cancelRange(a,b){if(!LN)return;try{const p=await LN.getPending();const ids=p.notifications.filter(n=>n.id>=a&&n.id<=b).map(n=>({id:n.id}));if(ids.length)await LN.cancel({notifications:ids})}catch(e){}}
-async function syncNativeReminders(){if(!nativeOK())return;await cancelRange(1000,1999);const list=[];let id=1000;
- const add=(t,wd)=>{const m=toMin(t.start);list.push({id:id++,channelId:CH,title:rTitle(t),body:t.name+' · '+fmtDur(t.dur)+'. Toque para abrir.',schedule:{on:{weekday:wd,hour:Math.floor(m/60),minute:m%60},allowWhileIdle:true},extra:{taskId:t.id}})};
- for(const t of S.weekday)if(wantsRemind(t))for(const wd of [2,3,4,5,6])add(t,wd);
- for(const t of S.saturday)if(wantsRemind(t))add(t,7);
- for(const t of S.sunday)if(wantsRemind(t))add(t,1);
- try{if(list.length)await LN.schedule({notifications:list})}catch(e){console.warn(e)}}
+const DIAG={native:NATIVE,plugin:!!LN,perm:'?',exact:'?',pending:'?',err:''};
+const CH='rotina2';
+let lnListen=false;
+async function nativeInit(ask){if(!LN)return;try{let p=await LN.checkPermissions();
+ if(p.display!=='granted'&&(ask||p.display==='prompt'||p.display==='prompt-with-rationale'))p=await LN.requestPermissions();nativePerm=p.display;DIAG.perm=p.display;
+ try{const ex=await LN.checkExactNotificationSetting();DIAG.exact=ex.exact_alarm}catch(e){DIAG.exact='n/d'}
+ await LN.createChannel({id:CH,name:'Avisos da rotina',description:'Lembretes e fim das etapas',importance:5,visibility:1,vibration:true,lights:true,lightColor:'#4CC9A0'});
+ if(!lnListen&&LN.addListener){lnListen=true;LN.addListener('localNotificationActionPerformed',()=>{render();if(S.active)openFocus()})}
+ await syncNativeReminders();await syncTimerNotifs()}catch(e){DIAG.err=String(e&&e.message||e)}}
+async function cancelRange(a,b){if(!LN)return;try{const p=await LN.getPending();const ids=p.notifications.filter(n=>n.id>=a&&n.id<=b).map(n=>({id:n.id}));if(ids.length)await LN.cancel({notifications:ids})}catch(e){DIAG.err=String(e&&e.message||e)}}
+/* Avisos avulsos para os próximos 14 dias (mais confiável que repetição): renovados sempre que o app abre. */
+async function syncNativeReminders(){if(!nativeOK())return;await cancelRange(1000,1999);const list=[];let id=1000;const k0=today(),now=Date.now();
+ for(let d=0;d<14&&id<1990;d++){const k=addDays(k0,d);const day=d===0?dayRec(k):null;const plan=day?day.plan:listFor(k);
+  for(const t of plan){if(!wantsRemind(t)||(day&&day.tasks[t.id]))continue;const at=new Date(k+'T'+t.start+':00-03:00');if(at.getTime()<=now+5000)continue;
+   list.push({id:id++,channelId:CH,title:rTitle(t),body:t.name+' · '+fmtDur(day?durOf(day,t):t.dur)+'. Toque para abrir.',schedule:{at,allowWhileIdle:true},extra:{taskId:t.id}})}}
+ try{if(list.length)await LN.schedule({notifications:list});const p=await LN.getPending();DIAG.pending=p.notifications.length}catch(e){DIAG.err=String(e&&e.message||e)}}
 async function syncTimerNotifs(){if(!LN)return;await cancelRange(9000,9099);const a=S.active;if(!nativeOK()||!a||a.pausedAt)return;
  const base=a.startedAt+(a.pausedTotal||0),now=Date.now(),list=[];const at=ms=>new Date(base+ms);
  const endMs=a.planned*60000;
  if(S.warnBefore>0&&a.planned>S.warnBefore){const w=endMs-S.warnBefore*60000;if(base+w>now+1000)list.push({id:9001,channelId:CH,title:'Faltam '+S.warnBefore+' min',body:a.name+': vá encerrando com calma.',schedule:{at:at(w),allowWhileIdle:true}})}
  if(base+endMs>now+1000)list.push({id:9002,channelId:CH,title:'Tempo previsto terminou',body:a.name+'. Abra o app para concluir ou pegar mais 5 min.',schedule:{at:at(endMs),allowWhileIdle:true}});
  if(a.split){let acc=0;a.split.forEach((s,i)=>{if(i>0&&base+acc*60000>now+1000)list.push({id:9010+i,channelId:CH,title:'Agora: '+s.label,body:a.name+' · '+s.min+' min',schedule:{at:at(acc*60000),allowWhileIdle:true}});acc+=s.min})}
- try{if(list.length)await LN.schedule({notifications:list})}catch(e){console.warn(e)}}
+ try{if(list.length)await LN.schedule({notifications:list})}catch(e){DIAG.err=String(e&&e.message||e)}}
 '''
 rep("/* ---------- toast ---------- */",NATIVE+"\n/* ---------- toast ---------- */")
 
@@ -74,7 +78,7 @@ rep("if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();chime('warn');buzz();sys
 # cronômetro: reagendar avisos nativos em cada mudança
 rep("S.active=Object.assign({startedAt:Date.now(),pausedAt:null,pausedTotal:0,warned:false,ended:false,seg:0,checked:[]},opts);save();openFocus();wakeOn()}",
     "S.active=Object.assign({startedAt:Date.now(),pausedAt:null,pausedTotal:0,warned:false,ended:false,seg:0,checked:[]},opts);save();openFocus();wakeOn();syncTimerNotifs()}")
-rep("const kind=a.kind,taskId=a.taskId,date=a.date;S.active=null;save();wakeOff();","const kind=a.kind,taskId=a.taskId,date=a.date;S.active=null;save();wakeOff();syncTimerNotifs();")
+rep("const kind=a.kind,taskId=a.taskId,date=a.date;S.active=null;save();wakeOff();","const kind=a.kind,taskId=a.taskId,date=a.date;S.active=null;save();wakeOff();syncTimerNotifs();syncNativeReminders();")
 rep("pause:()=>{S.active.pausedAt=Date.now();save();updateFocus(true)},","pause:()=>{S.active.pausedAt=Date.now();save();updateFocus(true);syncTimerNotifs()},")
 rep("a.pausedAt=null;save();updateFocus(true);wakeOn()},","a.pausedAt=null;save();updateFocus(true);wakeOn();syncTimerNotifs()},")
 rep("save();renderFocus();toast('Mais 5 minutos.')},","save();renderFocus();syncTimerNotifs();toast('Mais 5 minutos.')},")
@@ -92,16 +96,16 @@ rep("else if(act==='warn'){S.warnBefore=+el.value;save();","else if(act==='warn'
 
 # textos de Ajustes e onboarding
 rep(" const perm=!('Notification'in window)?'unsupported':Notification.permission;",
-    " const perm=!('Notification'in window)?'unsupported':Notification.permission;\n if(LN){h+=`<section class=\"card\"><span class=\"label\">Lembretes</span>${N.map(([id,l])=>`<label class=\"switch\"><span>${l}</span><input type=\"checkbox\" data-act-change=\"notif\" data-k=\"${id}\" ${S.notif[id]?'checked':''}></label>`).join('')}<div class=\"banner info\"><span>${nativePerm==='granted'?'<b>Avisos ativos.</b> Chegam mesmo com o app fechado ou a tela bloqueada, inclusive o fim de cada etapa do cronômetro.':'<b>Os avisos estão desligados.</b> Toque abaixo para permitir. Se não abrir a pergunta, vá em Configurações do Android → Apps → Rotina do Gabriel → Notificações.'} Se algum aviso atrasar ou não chegar, desative a economia de bateria para este app.</span>${nativePerm!=='granted'?'<div><button class=\"btn sm\" data-act=\"askNative\">Permitir avisos</button></div>':'<div><button class=\"btn sm\" data-act=\"testNative\">Testar aviso em 1 minuto</button></div>'}</div></section>`}else{")
+    " const perm=!('Notification'in window)?'unsupported':Notification.permission;\n if(LN){h+=`<section class=\"card\"><span class=\"label\">Lembretes</span>${N.map(([id,l])=>`<label class=\"switch\"><span>${l}</span><input type=\"checkbox\" data-act-change=\"notif\" data-k=\"${id}\" ${S.notif[id]?'checked':''}></label>`).join('')}<div class=\"banner info\"><span>${nativePerm==='granted'?'<b>Avisos ativos.</b> Chegam mesmo com o app fechado ou a tela bloqueada, inclusive o fim de cada etapa do cronômetro.':'<b>Os avisos estão desligados.</b> Toque abaixo para permitir. Se não abrir a pergunta, vá em Configurações do Android → Apps → Rotina do Gabriel → Notificações.'} Se algum aviso atrasar ou não chegar, desative a economia de bateria para este app.<br><span class=\"tiny muted\">Diagnóstico: app Android ${DIAG.native?'sim':'não'} · avisos ${DIAG.plugin?'ok':'faltando'} · permissão ${DIAG.perm} · alarme exato ${DIAG.exact} · agendados ${DIAG.pending}${DIAG.err?' · erro: '+esc(DIAG.err):''}</span></span>${DIAG.exact&&DIAG.exact!=='granted'&&DIAG.exact!=='?'&&DIAG.exact!=='n/d'?'<div><button class=\"btn sm\" data-act=\"exactNative\">Permitir avisos no horário exato</button></div>':''}${nativePerm!=='granted'?'<div><button class=\"btn sm\" data-act=\"askNative\">Permitir avisos</button></div>':'<div><button class=\"btn sm\" data-act=\"testNative\">Testar aviso em 1 minuto</button></div>'}</div></section>`}else{")
 rep("Para ser avisado com o celular bloqueado, crie alarmes no relógio do Android nos mesmos horários.</span>${perm==='default'?'<div><button class=\"btn sm\" data-act=\"askNotif\">Permitir notificações</button></div>':''}</div></section>`;",
     "Para ser avisado com o celular bloqueado, crie alarmes no relógio do Android nos mesmos horários.</span>${perm==='default'?'<div><button class=\"btn sm\" data-act=\"askNotif\">Permitir notificações</button></div>':''}</div></section>`;}")
 rep("<p class=\"small muted\">Os dados ficam salvos só neste aparelho. Os lembretes aparecem com o app aberto.</p>",
     "<p class=\"small muted\">Os dados ficam salvos só neste aparelho. ${LN?'Na próxima tela, permita as notificações para receber os avisos com o app fechado.':'Os lembretes aparecem com o app aberto.'}</p>")
 rep("Tudo fica salvo só neste navegador, neste aparelho. Se limpar os dados do navegador ou trocar de celular",
     "Tudo fica salvo só neste aparelho. Se desinstalar o app, limpar os dados dele ou trocar de celular")
-rep(" askNotif:async()=>"," testNative:async()=>{try{await LN.schedule({notifications:[{id:9500,channelId:CH,title:'Teste da Rotina',body:'Se você está vendo isto com a tela bloqueada, os avisos funcionam.',schedule:{at:new Date(Date.now()+60000),allowWhileIdle:true}}]});toast('Agora bloqueie o celular. O aviso chega em 1 minuto.')}catch(e){toast('Não consegui agendar: '+(e&&e.message||e))}},\n askNative:async()=>{await nativeInit(true);render();toast(nativePerm==='granted'?'Avisos ativados.':'Permita em Configurações do Android → Apps → Rotina do Gabriel.')},\n askNotif:async()=>")
+rep(" askNotif:async()=>"," exactNative:async()=>{try{await LN.changeExactNotificationSetting()}catch(e){}await nativeInit(false);render()},\n testNative:async()=>{try{if(!nativeOK())await nativeInit(true);await LN.schedule({notifications:[{id:9500,channelId:CH,title:'Teste da Rotina',body:'Se você está vendo isto com a tela bloqueada, os avisos funcionam.',schedule:{at:new Date(Date.now()+60000),allowWhileIdle:true}}]});toast('Agora bloqueie o celular. O aviso chega em 1 minuto.')}catch(e){DIAG.err=String(e&&e.message||e);toast('Não consegui agendar: '+DIAG.err);render()}},\n askNative:async()=>{await nativeInit(true);render();toast(nativePerm==='granted'?'Avisos ativados.':'Permita em Configurações do Android → Apps → Rotina do Gabriel.')},\n askNotif:async()=>")
 rep("load();lastKey=today();render();if(S.active&&S.setupDone)openFocus();",
-    "load();lastKey=today();render();if(S.active&&S.setupDone)openFocus();\nif(LN&&S.setupDone)nativeInit(false).then(()=>{if(view==='ajustes')render()});\nif(NATIVE)document.addEventListener('resume',()=>{render();syncTimerNotifs()});")
+    "load();lastKey=today();render();if(S.active&&S.setupDone)openFocus();\nif(LN&&S.setupDone)nativeInit(false).then(()=>{if(view==='ajustes')render()});\nif(NATIVE)document.addEventListener('resume',()=>{render();syncNativeReminders();syncTimerNotifs()});")
 out=out.rstrip()+'\n</body>\n</html>\n'
 open(sys.argv[2],'w').write(out)
 print('ok',len(out))
