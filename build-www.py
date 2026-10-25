@@ -46,10 +46,10 @@ async function nativeInit(ask){if(!LN)return;try{let p=await LN.checkPermissions
  await syncNativeReminders();await syncTimerNotifs()}catch(e){console.warn('notif',e)}}
 async function cancelRange(a,b){if(!LN)return;try{const p=await LN.getPending();const ids=p.notifications.filter(n=>n.id>=a&&n.id<=b).map(n=>({id:n.id}));if(ids.length)await LN.cancel({notifications:ids})}catch(e){}}
 async function syncNativeReminders(){if(!nativeOK())return;await cancelRange(1000,1999);const list=[];let id=1000;
- const add=(t,wd)=>{const m=toMin(t.start);list.push({id:id++,channelId:CH,title:RMSG[t.remind]||t.name,body:t.name+' · '+fmtDur(t.dur)+'. Toque para abrir.',schedule:{on:{weekday:wd,hour:Math.floor(m/60),minute:m%60},allowWhileIdle:true},extra:{taskId:t.id}})};
- for(const t of S.weekday)if(t.remind&&S.notif[t.remind])for(const wd of [2,3,4,5,6])add(t,wd);
- for(const t of S.saturday)if(t.remind&&S.notif[t.remind])add(t,7);
- for(const t of S.sunday)if(t.remind&&S.notif[t.remind])add(t,1);
+ const add=(t,wd)=>{const m=toMin(t.start);list.push({id:id++,channelId:CH,title:rTitle(t),body:t.name+' · '+fmtDur(t.dur)+'. Toque para abrir.',schedule:{on:{weekday:wd,hour:Math.floor(m/60),minute:m%60},allowWhileIdle:true},extra:{taskId:t.id}})};
+ for(const t of S.weekday)if(wantsRemind(t))for(const wd of [2,3,4,5,6])add(t,wd);
+ for(const t of S.saturday)if(wantsRemind(t))add(t,7);
+ for(const t of S.sunday)if(wantsRemind(t))add(t,1);
  try{if(list.length)await LN.schedule({notifications:list})}catch(e){console.warn(e)}}
 async function syncTimerNotifs(){if(!LN)return;await cancelRange(9000,9099);const a=S.active;if(!nativeOK()||!a||a.pausedAt)return;
  const base=a.startedAt+(a.pausedTotal||0),now=Date.now(),list=[];const at=ms=>new Date(base+ms);
@@ -68,8 +68,8 @@ rep("if(!a.warned&&S.warnBefore>0&&r<=S.warnBefore*60&&r>0&&a.planned>S.warnBefo
 rep("if(!a.ended&&r<=0){a.ended=true;save();chime('end');buzz();sysNotify('Tempo previsto terminou',a.name);",
     "if(!a.ended&&r<=0){a.ended=true;save();if(!nativeOK()){chime('end');buzz();sysNotify('Tempo previsto terminou',a.name)}")
 rep("if(cur!==a.seg){a.seg=cur;save();chime('warn');buzz();","if(cur!==a.seg){a.seg=cur;save();if(!nativeOK()){chime('warn');buzz()}")
-rep("if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();chime('warn');buzz();sysNotify(RMSG[t.remind],t.name);",
-    "if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();if(!nativeOK()){chime('warn');buzz();sysNotify(RMSG[t.remind],t.name)}")
+rep("if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();chime('warn');buzz();sysNotify(rTitle(t),t.name);",
+    "if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();if(!nativeOK()){chime('warn');buzz();sysNotify(rTitle(t),t.name)}")
 
 # cronômetro: reagendar avisos nativos em cada mudança
 rep("S.active=Object.assign({startedAt:Date.now(),pausedAt:null,pausedTotal:0,warned:false,ended:false,seg:0,checked:[]},opts);save();openFocus();wakeOn()}",
@@ -92,14 +92,14 @@ rep("else if(act==='warn'){S.warnBefore=+el.value;save();","else if(act==='warn'
 
 # textos de Ajustes e onboarding
 rep(" const perm=!('Notification'in window)?'unsupported':Notification.permission;",
-    " const perm=!('Notification'in window)?'unsupported':Notification.permission;\n if(LN){h+=`<section class=\"card\"><span class=\"label\">Lembretes</span>${N.map(([id,l])=>`<label class=\"switch\"><span>${l}</span><input type=\"checkbox\" data-act-change=\"notif\" data-k=\"${id}\" ${S.notif[id]?'checked':''}></label>`).join('')}<div class=\"banner info\"><span>${nativePerm==='granted'?'<b>Avisos ativos.</b> Chegam mesmo com o app fechado ou a tela bloqueada, inclusive o fim de cada etapa do cronômetro.':'<b>Os avisos estão desligados.</b> Toque abaixo para permitir. Se não abrir a pergunta, vá em Configurações do Android → Apps → Rotina do Gabriel → Notificações.'} Se algum aviso atrasar ou não chegar, desative a economia de bateria para este app.</span>${nativePerm!=='granted'?'<div><button class=\"btn sm\" data-act=\"askNative\">Permitir avisos</button></div>':''}</div></section>`}else{")
+    " const perm=!('Notification'in window)?'unsupported':Notification.permission;\n if(LN){h+=`<section class=\"card\"><span class=\"label\">Lembretes</span>${N.map(([id,l])=>`<label class=\"switch\"><span>${l}</span><input type=\"checkbox\" data-act-change=\"notif\" data-k=\"${id}\" ${S.notif[id]?'checked':''}></label>`).join('')}<div class=\"banner info\"><span>${nativePerm==='granted'?'<b>Avisos ativos.</b> Chegam mesmo com o app fechado ou a tela bloqueada, inclusive o fim de cada etapa do cronômetro.':'<b>Os avisos estão desligados.</b> Toque abaixo para permitir. Se não abrir a pergunta, vá em Configurações do Android → Apps → Rotina do Gabriel → Notificações.'} Se algum aviso atrasar ou não chegar, desative a economia de bateria para este app.</span>${nativePerm!=='granted'?'<div><button class=\"btn sm\" data-act=\"askNative\">Permitir avisos</button></div>':'<div><button class=\"btn sm\" data-act=\"testNative\">Testar aviso em 1 minuto</button></div>'}</div></section>`}else{")
 rep("Para ser avisado com o celular bloqueado, crie alarmes no relógio do Android nos mesmos horários.</span>${perm==='default'?'<div><button class=\"btn sm\" data-act=\"askNotif\">Permitir notificações</button></div>':''}</div></section>`;",
     "Para ser avisado com o celular bloqueado, crie alarmes no relógio do Android nos mesmos horários.</span>${perm==='default'?'<div><button class=\"btn sm\" data-act=\"askNotif\">Permitir notificações</button></div>':''}</div></section>`;}")
 rep("<p class=\"small muted\">Os dados ficam salvos só neste aparelho. Os lembretes aparecem com o app aberto.</p>",
     "<p class=\"small muted\">Os dados ficam salvos só neste aparelho. ${LN?'Na próxima tela, permita as notificações para receber os avisos com o app fechado.':'Os lembretes aparecem com o app aberto.'}</p>")
 rep("Tudo fica salvo só neste navegador, neste aparelho. Se limpar os dados do navegador ou trocar de celular",
     "Tudo fica salvo só neste aparelho. Se desinstalar o app, limpar os dados dele ou trocar de celular")
-rep(" askNotif:async()=>"," askNative:async()=>{await nativeInit(true);render();toast(nativePerm==='granted'?'Avisos ativados.':'Permita em Configurações do Android → Apps → Rotina do Gabriel.')},\n askNotif:async()=>")
+rep(" askNotif:async()=>"," testNative:async()=>{try{await LN.schedule({notifications:[{id:9500,channelId:CH,title:'Teste da Rotina',body:'Se você está vendo isto com a tela bloqueada, os avisos funcionam.',schedule:{at:new Date(Date.now()+60000),allowWhileIdle:true}}]});toast('Agora bloqueie o celular. O aviso chega em 1 minuto.')}catch(e){toast('Não consegui agendar: '+(e&&e.message||e))}},\n askNative:async()=>{await nativeInit(true);render();toast(nativePerm==='granted'?'Avisos ativados.':'Permita em Configurações do Android → Apps → Rotina do Gabriel.')},\n askNotif:async()=>")
 rep("load();lastKey=today();render();if(S.active&&S.setupDone)openFocus();",
     "load();lastKey=today();render();if(S.active&&S.setupDone)openFocus();\nif(LN&&S.setupDone)nativeInit(false).then(()=>{if(view==='ajustes')render()});\nif(NATIVE)document.addEventListener('resume',()=>{render();syncTimerNotifs()});")
 out=out.rstrip()+'\n</body>\n</html>\n'

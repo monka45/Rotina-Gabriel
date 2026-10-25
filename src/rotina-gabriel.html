@@ -242,7 +242,7 @@ const DEF_TYPES=['Caminhada na orla','Caminhada leve','Treino de força em casa'
 function defaults(){const r=defaultRoutines();return{v:1,setupDone:false,name:'Gabriel',theme:'dark',calm:false,mode:'flex',autoNext:false,warnBefore:2,sound:true,vibrate:true,wake:true,
  weekday:r.weekday,saturday:r.saturday,sunday:r.sunday,split:clone(DEF_SPLIT),subjects:clone(DEF_SUBJ),
  goals:{studyH:8,workouts:4,questions:60},plan:clone(DEF_PLAN),types:clone(DEF_TYPES),
- notif:{jantar:true,treino:true,estudo:true,revisao:true,dormir:true},
+ notif:{jantar:true,treino:true,estudo:true,revisao:true,dormir:true,outras:true},
  days:{},active:null,studies:[],errors:[],reviews:[],workouts:[]}}
 
 /* ---------- armazenamento ---------- */
@@ -585,7 +585,7 @@ function renderAjustes(){let h=topBar('Ajustes',true);const sl=sleepInfo();
  <div class="field"><label for="s-warn">Aviso antes de acabar cada etapa</label><select id="s-warn" data-act-change="warn">${[0,1,2,3,5].map(v=>`<option value="${v}" ${S.warnBefore===v?'selected':''}>${v?v+' min antes':'Sem aviso'}</option>`).join('')}</select></div>
  ${sw('autoNext',S.autoNext,'Iniciar a próxima etapa sozinho','Desligado: você sempre escolhe quando começar.')}
  ${sw('sound',S.sound,'Sons suaves')}${sw('vibrate',S.vibrate,'Vibrar','Funciona em alguns celulares Android.')}${sw('wake',S.wake,'Manter a tela ligada no cronômetro')}</section>`;
- const N=[['jantar','Início do jantar'],['treino','Início do exercício'],['estudo','Início do estudo'],['revisao','Revisão semanal'],['dormir','Preparação para dormir']];
+ const N=[['jantar','Início do jantar'],['treino','Início do exercício'],['estudo','Início do estudo'],['revisao','Revisão semanal'],['dormir','Preparação para dormir'],['outras','Outras etapas (inclusive as que você criar)']];
  const perm=!('Notification'in window)?'unsupported':Notification.permission;
  h+=`<section class="card"><span class="label">Lembretes</span>${N.map(([id,l])=>`<label class="switch"><span>${l}</span><input type="checkbox" data-act-change="notif" data-k="${id}" ${S.notif[id]?'checked':''}></label>`).join('')}
  <div class="banner info"><span><b>Como os lembretes funcionam:</b> aparecem na tela, com som e vibração, enquanto o app estiver aberto. ${perm==='unsupported'?'Este navegador não oferece notificações do sistema.':perm==='granted'?'Notificações do navegador estão permitidas.':perm==='denied'?'As notificações do navegador foram bloqueadas.':'Você pode tentar permitir notificações do navegador.'} Para ser avisado com o celular bloqueado, crie alarmes no relógio do Android nos mesmos horários.</span>${perm==='default'?'<div><button class="btn sm" data-act="askNotif">Permitir notificações</button></div>':''}</div></section>`;
@@ -735,11 +735,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#modal').hid
 
 /* ---------- lembretes ---------- */
 const RMSG={jantar:'Hora do jantar',treino:'Hora de se mexer',estudo:'Hora de estudar',revisao:'Revisão semanal',dormir:'Hora de preparar para dormir'};
+const wantsRemind=t=>!t.fixed&&(t.remind?!!S.notif[t.remind]:S.notif.outras!==false);
+const rTitle=t=>RMSG[t.remind]||('Hora de: '+t.name);
 function checkReminders(){if(!S.setupDone)return;const n=nowP(),day=dayRec(n.key);day.fired=day.fired||{};
- for(const t of day.plan){if(!t.remind||!S.notif[t.remind]||day.tasks[t.id]||day.fired[t.id])continue;const st=toMin(t.start);
-  if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();chime('warn');buzz();sysNotify(RMSG[t.remind],t.name);
-   if(S.active){toast(RMSG[t.remind]+' ('+t.start+'). Conclua a etapa atual quando puder.');continue}
-   openModal(`<span class="label">Lembrete · ${t.start}</span><h2>${esc(RMSG[t.remind])}</h2><p>${esc(t.name)} · ${fmtDur(durOf(day,t))}</p><div class="btns"><button class="btn" data-act="closeModal">Agora não</button><button class="btn primary" data-act="start" data-id="${t.id}">Começar</button></div>`)}}}
+ for(const t of day.plan){if(!wantsRemind(t)||day.tasks[t.id]||day.fired[t.id])continue;const st=toMin(t.start);
+  if(n.min>=st&&n.min<st+3){day.fired[t.id]=1;save();chime('warn');buzz();sysNotify(rTitle(t),t.name);
+   if(S.active){toast(rTitle(t)+' ('+t.start+'). Conclua a etapa atual quando puder.');continue}
+   openModal(`<span class="label">Lembrete · ${t.start}</span><h2>${esc(rTitle(t))}</h2><p>${esc(t.name)} · ${fmtDur(durOf(day,t))}</p><div class="btns"><button class="btn" data-act="closeModal">Agora não</button><button class="btn primary" data-act="start" data-id="${t.id}">Começar</button></div>`)}}}
 
 /* ---------- loop ---------- */
 let lastKey=null,lastMin=null;
