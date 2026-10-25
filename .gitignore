@@ -1,0 +1,4 @@
+node_modules/
+*.apk
+icone-preview.png
+*.keystore

@@ -1,0 +1,15 @@
+{
+  "appId": "br.rotina.gabriel",
+  "appName": "Rotina do Gabriel",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force",
+    "backgroundColor": "#131619"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_rotina",
+      "iconColor": "#4CC9A0"
+    }
+  }
+}

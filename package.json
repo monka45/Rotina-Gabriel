@@ -1,0 +1,19 @@
+{
+  "name": "rotina-gabriel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rotina do Gabriel - app Android",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/core": "7.6.9",
+    "@capacitor/local-notifications": "7.0.7",
+    "@fontsource/atkinson-hyperlegible": "5.3.0",
+    "@fontsource/lexend": "5.3.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.9"
+  }
+}

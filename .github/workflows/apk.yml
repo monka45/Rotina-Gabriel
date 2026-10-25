@@ -1,0 +1,65 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependências e copiar o app para o Android
+        run: |
+          npm ci
+          npx cap sync android
+
+      - name: Preparar assinatura
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            printf '%s' "${ANDROID_KEYSTORE#*|}" | base64 -d > android/app/rotina.keystore
+            echo "::add-mask::${ANDROID_KEYSTORE%%|*}"
+            echo "KS_PASS=${ANDROID_KEYSTORE%%|*}" >> "$GITHUB_ENV"
+            echo "NOTA=Assinatura fixa: versões novas instalam por cima sem apagar os dados." >> "$GITHUB_ENV"
+          else
+            echo "::warning::Segredo ANDROID_KEYSTORE não configurado. Usando assinatura temporária."
+            echo "NOTA=Atenção: assinatura temporária. Para atualizar sem perder dados, configure o segredo ANDROID_KEYSTORE." >> "$GITHUB_ENV"
+          fi
+
+      - name: Compilar APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../RotinaDoGabriel.apk
+
+      - name: Guardar APK (aba Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RotinaDoGabriel-apk
+          path: RotinaDoGabriel.apk
+
+      - name: Publicar na página de Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete ultima-versao --yes --cleanup-tag || true
+          gh release create ultima-versao RotinaDoGabriel.apk \
+            --title "Rotina do Gabriel — última versão" \
+            --notes "Baixe o arquivo RotinaDoGabriel.apk no celular Android e instale. $NOTA"
